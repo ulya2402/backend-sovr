@@ -1,0 +1,8 @@
+name = "backend-sovr"
+main = "src/index.ts"
+compatibility_date = "2024-03-20"
+
+[[d1_databases]]
+binding = "sovr_db"
+database_name = "sovr_db"
+database_id = "f6acbe09-dc56-4698-9fce-2453a59bfc8d"
