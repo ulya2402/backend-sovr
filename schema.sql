@@ -1,5 +1,3 @@
-DROP TABLE IF EXISTS articles;
-
 CREATE TABLE IF NOT EXISTS articles (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     tag TEXT,
@@ -22,7 +20,7 @@ CREATE TABLE IF NOT EXISTS api_cache (
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE vault_tools (
+CREATE TABLE IF NOT EXISTS vault_tools (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     logo TEXT,
@@ -32,5 +30,17 @@ CREATE TABLE vault_tools (
     platform TEXT,
     url TEXT,
     summary TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS perspectives (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT,
+    image_url TEXT,
+    body TEXT,
+    author TEXT,
+    category TEXT,
+    views INTEGER DEFAULT 0,
+    published_date TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
