@@ -934,19 +934,39 @@ export default {
     const url = new URL(request.url);
     if (request.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
-    // API Berita
+    // --- AWAL PERUBAHAN: IMPLEMENTASI EDGE CACHE ---
+    const cache = caches.default;
+    const cacheKey = new Request(url.toString(), request);
+
+    if (request.method === "GET" && url.pathname.startsWith("/api/")) {
+      const isPerspectiveDetail = url.pathname === "/api/perspectives" && url.searchParams.has("id");
+      if (!isPerspectiveDetail) {
+        const cachedResponse = await cache.match(cacheKey);
+        if (cachedResponse) return cachedResponse;
+      }
+    }
+    // --- BATAS PERUBAHAN: IMPLEMENTASI EDGE CACHE ---
+
     if (url.pathname === "/api/articles" && request.method === "GET") {
       const { results } = await env.sovr_db.prepare(`SELECT * FROM articles WHERE status = 'published' ORDER BY id DESC`).all();
-      return new Response(JSON.stringify(results), { status: 200, headers: corsHeaders });
+      
+      // --- AWAL PERUBAHAN ---
+      const response = new Response(JSON.stringify(results), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "public, s-maxage=60" } });
+      ctx.waitUntil(cache.put(cacheKey, response.clone()));
+      return response;
+      // --- BATAS PERUBAHAN ---
     }
 
-    // API VAULT BARU 🚀
     if (url.pathname === "/api/vault" && request.method === "GET") {
       const { results } = await env.sovr_db.prepare(`SELECT * FROM vault_tools ORDER BY id DESC`).all();
-      return new Response(JSON.stringify(results), { status: 200, headers: corsHeaders });
+      
+      // --- AWAL PERUBAHAN ---
+      const response = new Response(JSON.stringify(results), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "public, s-maxage=60" } });
+      ctx.waitUntil(cache.put(cacheKey, response.clone()));
+      return response;
+      // --- BATAS PERUBAHAN ---
     }
 
-    // --- AWAL PERUBAHAN TAHAP 5 ---
     if (url.pathname === "/api/perspectives" && request.method === "GET") {
       const id = url.searchParams.get("id");
       
@@ -954,7 +974,10 @@ export default {
         await env.sovr_db.prepare(`UPDATE perspectives SET views = views + 1 WHERE id = ?`).bind(id).run();
         const article = await env.sovr_db.prepare(`SELECT * FROM perspectives WHERE id = ?`).bind(id).first();
         if (!article) return new Response(JSON.stringify({ error: "Not Found" }), { status: 404, headers: corsHeaders });
-        return new Response(JSON.stringify(article), { status: 200, headers: corsHeaders });
+        
+        // --- AWAL PERUBAHAN ---
+        return new Response(JSON.stringify(article), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "no-cache" } });
+        // --- BATAS PERUBAHAN ---
       }
 
       const sort = url.searchParams.get("sort") || "latest";
@@ -975,15 +998,24 @@ export default {
       }
       
       const { results } = await env.sovr_db.prepare(query).bind(...params).all();
-      return new Response(JSON.stringify(results), { status: 200, headers: corsHeaders });
+      
+      // --- AWAL PERUBAHAN ---
+      const response = new Response(JSON.stringify(results), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "public, s-maxage=60" } });
+      ctx.waitUntil(cache.put(cacheKey, response.clone()));
+      return response;
+      // --- BATAS PERUBAHAN ---
     }
-// --- BATAS PERUBAHAN TAHAP 5 ---
 
-    // API Ticker Crypto
     if (url.pathname === "/api/ticker" && request.method === "GET") {
       try {
-        const cache: any = await env.sovr_db.prepare("SELECT value FROM api_cache WHERE key = 'ticker_data' AND updated_at > datetime('now', '-15 minutes')").first();
-        if (cache?.value) return new Response(cache.value, { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        const cacheDb: any = await env.sovr_db.prepare("SELECT value FROM api_cache WHERE key = 'ticker_data' AND updated_at > datetime('now', '-15 minutes')").first();
+        if (cacheDb?.value) {
+            // --- AWAL PERUBAHAN ---
+            const response = new Response(cacheDb.value, { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "public, s-maxage=60" } });
+            ctx.waitUntil(cache.put(cacheKey, response.clone()));
+            return response;
+            // --- BATAS PERUBAHAN ---
+        }
 
         const cmcResponse = await fetch("https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest?symbol=BTC,ETH,SOL,BNB", { headers: { "X-CMC_PRO_API_KEY": env.CMC_API_KEY, "Accept": "application/json" }});
         const cmcData: any = await cmcResponse.json();
@@ -1009,7 +1041,12 @@ export default {
 
         const stringified = JSON.stringify({ coins: mappedCoins, fng: { value: fngValue, classification: fngClass } });
         await env.sovr_db.prepare("INSERT OR REPLACE INTO api_cache (key, value, updated_at) VALUES ('ticker_data', ?, datetime('now'))").bind(stringified).run();
-        return new Response(stringified, { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        
+        // --- AWAL PERUBAHAN ---
+        const response = new Response(stringified, { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "public, s-maxage=60" } });
+        ctx.waitUntil(cache.put(cacheKey, response.clone()));
+        return response;
+        // --- BATAS PERUBAHAN ---
       } catch (error) {
         const fallback = { coins: [{ symbol: "BTC", pair: "BTC/USDT", price: "76,000", change: "0.0%", isUp: true }], fng: { value: "50", classification: "Neutral" } };
         return new Response(JSON.stringify(fallback), { status: 200, headers: corsHeaders });
