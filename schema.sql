@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS vault_tools (
     platform TEXT,
     url TEXT,
     summary TEXT,
+    featured INTEGER DEFAULT 0, -- 🔥 TAMBAHAN: Kolom untuk menandai rekomendasi (0 = false, 1 = true)
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 

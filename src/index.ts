@@ -118,13 +118,16 @@ function renderFeedDraft(draft: any) {
   return { text, keyboard };
 }
 
+// --- AWAL PERUBAHAN: Menu vaultKeyboard ---
 const vaultKeyboard = {
   inline_keyboard: [
     [{ text: "📝 Tambah Tool", callback_data: "v_post" }, { text: "📋 List Tool", callback_data: "v_list" }],
     [{ text: "✏️ Edit Tool", callback_data: "v_edit" }, { text: "❌ Delete Tool", callback_data: "v_delete" }],
+    [{ text: "⭐ Rekomendasi Vault", callback_data: "v_feat_0" }],
     [{ text: "⬅️ Kembali ke Menu Utama", callback_data: "menu_main" }]
   ]
 };
+// --- BATAS PERUBAHAN ---
 
 function renderVaultDraft(draft: any) {
   const text = `🔒 <b>DRAFT VAULT TOOL</b>\n\n` +
@@ -635,6 +638,57 @@ async function handleCallbackQuery(env: Env, callbackQuery: TelegramCallbackQuer
       const kb = { inline_keyboard: [[{ text: "⬅️ Kembali", callback_data: "menu_vault" }]] };
       await editTelegramMessage(env, chatId, messageId, `✅ <b>SUKSES!</b>\n\nTool dengan ID ${toolId} berhasil dihapus.`, kb);
     }
+
+    // --- AWAL PERUBAHAN: Fitur Toggle Rekomendasi Vault ---
+    // --- AWAL PERUBAHAN: Fitur Toggle Rekomendasi Vault ---
+    else if (data.startsWith("v_feat_") || data.startsWith("v_toggle_")) {
+      const parts = data.split("_");
+      let page = 0;
+
+      if (data.startsWith("v_feat_")) {
+        page = parseInt(parts[2] || "0", 10);
+      } else if (data.startsWith("v_toggle_")) {
+        const toolId = Number(parts[2]); 
+        page = parseInt(parts[3] || "0", 10);
+        
+        await env.sovr_db.prepare(`UPDATE vault_tools SET featured = CASE WHEN featured = 1 THEN 0 ELSE 1 END WHERE id = ?`).bind(toolId).run();
+      }
+
+      const limit = 5;
+      const offset = page * limit;
+
+      const { results } = await env.sovr_db.prepare(`SELECT id, name, featured FROM vault_tools ORDER BY id DESC LIMIT ? OFFSET ?`).bind(limit + 1, offset).all();
+      const hasNext = results && results.length > limit;
+      const items = results ? results.slice(0, limit) : [];
+
+      if (items.length === 0) {
+        return await editTelegramMessage(env, chatId, messageId, "📭 <b>Belum ada Tool di Vault.</b>", { inline_keyboard: [[{ text: "⬅️ Kembali", callback_data: "menu_vault" }]] });
+      }
+
+      const kb: any = { inline_keyboard: [] };
+      let msg = `⭐ <b>Rekomendasi Vault (Halaman ${page + 1})</b>\n\nKlik tombol di bawah untuk menyalakan/mematikan promosi tool:\n\n`;
+
+      items.forEach((a: any) => {
+        const isFeatured = a.featured === 1;
+        const shortName = a.name.length > 25 ? a.name.substring(0, 25) + "..." : a.name;
+        const icon = isFeatured ? "⭐" : "➖";
+
+        msg += `${icon} <b>ID: ${a.id}</b> | ${shortName}\n`;
+        kb.inline_keyboard.push([{ text: `${isFeatured ? "❌ Hapus Rekomendasi" : "⭐ Jadikan Rekomendasi"} (ID: ${a.id})`, callback_data: `v_toggle_${a.id}_${page}` }]);
+      });
+
+      const navButtons = [];
+      if (page > 0) navButtons.push({ text: "⬅️ Prev", callback_data: `v_feat_${page - 1}` });
+      if (hasNext) navButtons.push({ text: "Next ➡️", callback_data: `v_feat_${page + 1}` });
+
+      if (navButtons.length > 0) kb.inline_keyboard.push(navButtons);
+      kb.inline_keyboard.push([{ text: "⬅️ Kembali ke Menu Vault", callback_data: "menu_vault" }]);
+
+      await editTelegramMessage(env, chatId, messageId, msg, kb);
+    }
+    // --- BATAS PERUBAHAN ---
+    // --- BATAS PERUBAHAN ---
+    // --- BATAS PERUBAHAN ---
     
     // --- AWAL PERUBAHAN ---
     else if (data === "menu_editor" || data.startsWith("e_list_") || data.startsWith("e_toggle_")) {
