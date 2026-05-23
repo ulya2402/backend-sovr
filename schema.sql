@@ -45,3 +45,12 @@ CREATE TABLE IF NOT EXISTS perspectives (
     published_date TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS prompts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    image_url TEXT,
+    ai_model TEXT,
+    prompt_text TEXT,
+    published_date TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);

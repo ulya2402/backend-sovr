@@ -86,6 +86,7 @@ const mainKeyboard = {
     [{ text: "📱 Manajemen Feed", callback_data: "menu_feed" }],
     [{ text: "🔒 Manajemen Vault", callback_data: "menu_vault" }],
     [{ text: "🔭 Manajemen Perspectives", callback_data: "menu_perspectives" }],
+    [{ text: "🎨 Manajemen Prompt", callback_data: "menu_prompt" }],
     [{ text: "⭐ Pilihan Editor", callback_data: "menu_editor" }]
   ]
 };
@@ -178,6 +179,33 @@ function renderPerspectivesDraft(draft: any) {
 }
 // --- BATAS PERUBAHAN ---
 
+// --- AWAL PERUBAHAN ---
+const promptKeyboard = {
+  inline_keyboard: [
+    [{ text: "📝 Post Prompt", callback_data: "pr_post" }, { text: "📋 List Prompt", callback_data: "pr_list" }],
+    [{ text: "✏️ Edit Prompt", callback_data: "pr_edit" }, { text: "❌ Delete Prompt", callback_data: "pr_delete" }],
+    [{ text: "⬅️ Kembali ke Menu Utama", callback_data: "menu_main" }]
+  ]
+};
+
+function renderPromptDraft(draft: any) {
+  const text = `🎨 <b>DRAFT PROMPT OF THE DAY</b>\n\n` +
+    `🖼️ <b>Link Gambar:</b> ${draft.image ? '✅ Gambar Tersemat' : '<i>(Belum diisi)</i>'}\n` +
+    `🤖 <b>Model AI:</b> ${draft.model || '<i>(Belum diisi)</i>'}\n` +
+    `💬 <b>Teks Prompt:</b> ${draft.prompt ? '✅ Diisi (' + draft.prompt.length + ' karakter)' : '<i>(Belum diisi)</i>'}\n` +
+    `📅 <b>Tanggal:</b> ${draft.date || '<i>(Belum diisi)</i>'}`;
+
+  const keyboard = {
+    inline_keyboard: [
+      [{ text: "🖼️ Link Gambar", callback_data: "pr_input_image" }, { text: "🤖 Model AI", callback_data: "pr_input_model" }],
+      [{ text: "💬 Teks Prompt", callback_data: "pr_input_prompt" }, { text: "📅 Tanggal", callback_data: "pr_input_date" }],
+      [{ text: "⬅️ Kembali", callback_data: "menu_prompt" }, { text: "💾 Kirim/Post", callback_data: "pr_submit" }]
+    ]
+  };
+  return { text, keyboard };
+}
+// --- BATAS PERUBAHAN ---
+
 async function handleIncomingMessage(env: Env, message: TelegramMessage) {
   if (!message.text || !message.from) return;
   const chatId = message.chat.id;
@@ -196,6 +224,7 @@ async function handleIncomingMessage(env: Env, message: TelegramMessage) {
   
   // --- AWAL PERUBAHAN 2 ---
   // --- AWAL PERUBAHAN TAHAP 3 ---
+  // --- AWAL PERUBAHAN ---
   if (state && state.waitingFor && state.lastMessageId) {
     await deleteTelegramMessage(env, chatId, message.message_id);
     
@@ -209,14 +238,15 @@ async function handleIncomingMessage(env: Env, message: TelegramMessage) {
     } else if (state.menu === "PERSPECTIVES") {
       const view = renderPerspectivesDraft(state.draft);
       await editTelegramMessage(env, chatId, state.lastMessageId, `✅ <i>Data diperbarui!</i>\n\n${view.text}`, view.keyboard);
+    } else if (state.menu === "PROMPT") {
+      const view = renderPromptDraft(state.draft);
+      await editTelegramMessage(env, chatId, state.lastMessageId, `✅ <i>Data diperbarui!</i>\n\n${view.text}`, view.keyboard);
     } else {
       const view = renderFeedDraft(state.draft);
       await editTelegramMessage(env, chatId, state.lastMessageId, `✅ <i>Data diperbarui!</i>\n\n${view.text}`, view.keyboard);
     }
     return;
   }
-// --- BATAS PERUBAHAN TAHAP 3 ---
-// --- BATAS PERUBAHAN 2 ---
 
 }
 
@@ -243,7 +273,7 @@ async function handleCallbackQuery(env: Env, callbackQuery: TelegramCallbackQuer
       await setUserState(env, userId, newState);
       const view = renderFeedDraft(newState.draft);
       await editTelegramMessage(env, chatId, messageId, view.text, view.keyboard);
-    } 
+    }
     else if (data.startsWith("f_input_")) {
       const field = data.split("_")[2];
       const state = await getUserState(env, userId);
@@ -297,6 +327,175 @@ async function handleCallbackQuery(env: Env, callbackQuery: TelegramCallbackQuer
       await editTelegramMessage(env, chatId, messageId, view.text, view.keyboard);
     } 
     
+    // --- AWAL PERUBAHAN ---
+    else if (data === "menu_prompt") {
+      await clearUserState(env, userId);
+      await editTelegramMessage(env, chatId, messageId, "🎨 <b>Manajemen Prompt Of The Day</b>\n\nPilih aksi yang ingin dilakukan:", promptKeyboard);
+    }
+    else if (data === "pr_post") {
+      const newState: TelegramState = { menu: "PROMPT", action: "POST", draft: {}, waitingFor: null, lastMessageId: messageId };
+      await setUserState(env, userId, newState);
+      const view = renderPromptDraft(newState.draft);
+      await editTelegramMessage(env, chatId, messageId, view.text, view.keyboard);
+    }
+    else if (data.startsWith("pr_input_")) {
+      const field = data.split("_")[2];
+      const state = await getUserState(env, userId);
+      if (!state) return;
+
+      state.waitingFor = field;
+      state.lastMessageId = messageId;
+      await setUserState(env, userId, state);
+
+      let promptText = `Ketik data untuk <b>${field.toUpperCase()}</b>:`;
+      let kb: any = { inline_keyboard: [[{ text: "⬅️ Batal", callback_data: "pr_cancel_input" }]] };
+      
+      if (field === "date") {
+        kb = { inline_keyboard: [ [{ text: "⏰ SEKARANG (NOW)", callback_data: "pr_set_now" }], [{ text: "⬅️ Batal", callback_data: "pr_cancel_input" }] ] };
+        promptText = "Masukkan <b>Tanggal</b> (YYYY-MM-DD) atau klik tombol instan:";
+      } else if (field === "model") {
+        kb = { inline_keyboard: [
+          [{ text: "Midjourney v6", callback_data: "pr_setmod_Midjourney v6" }, { text: "DALL-E 3", callback_data: "pr_setmod_DALL-E 3" }],
+          [{ text: "Stable Diffusion 3", callback_data: "pr_setmod_Stable Diffusion 3" }, { text: "Lainnya", callback_data: "pr_setmod_Lainnya" }],
+          [{ text: "⬅️ Batal", callback_data: "pr_cancel_input" }]
+        ] };
+        promptText = "Pilih <b>Model AI</b> atau ketik manual dengan memilih 'Lainnya':";
+      } else if (field === "image") {
+        promptText = "Masukkan <b>Link URL Gambar</b>:";
+      } else if (field === "prompt") {
+        promptText = "Masukkan <b>Teks Prompt</b> yang digunakan:";
+      }
+
+      await editTelegramMessage(env, chatId, messageId, promptText, kb);
+    }
+    else if (data === "pr_cancel_input") {
+      const state = await getUserState(env, userId);
+      if (!state) return;
+      state.waitingFor = null;
+      await setUserState(env, userId, state);
+      const view = renderPromptDraft(state.draft);
+      await editTelegramMessage(env, chatId, messageId, view.text, view.keyboard);
+    }
+    else if (data === "pr_set_now") {
+      const state = await getUserState(env, userId);
+      if (!state) return;
+      state.draft.date = getTodayDate();
+      state.waitingFor = null;
+      await setUserState(env, userId, state);
+      const view = renderPromptDraft(state.draft);
+      await editTelegramMessage(env, chatId, messageId, view.text, view.keyboard);
+    }
+    else if (data.startsWith("pr_setmod_")) {
+      const state = await getUserState(env, userId);
+      if (!state) return;
+      const modelName = data.replace("pr_setmod_", "");
+      if (modelName === "Lainnya") {
+        state.waitingFor = "model";
+        await setUserState(env, userId, state);
+        await editTelegramMessage(env, chatId, messageId, "Ketik nama <b>Model AI</b> secara manual:", { inline_keyboard: [[{ text: "⬅️ Batal", callback_data: "pr_cancel_input" }]] });
+        return;
+      }
+      state.draft.model = modelName;
+      state.waitingFor = null;
+      await setUserState(env, userId, state);
+      const view = renderPromptDraft(state.draft);
+      await editTelegramMessage(env, chatId, messageId, view.text, view.keyboard);
+    }
+    else if (data === "pr_submit") {
+      const state = await getUserState(env, userId);
+      if (!state) return;
+      
+      const d = state.draft;
+      if (!d.image || !d.model || !d.prompt || !d.date) {
+        return await answerCallbackQuery(env, callbackQuery.id, "Data Prompt belum lengkap!", true);
+      }
+
+      const txt = state.action === "EDIT" ? "⚠️ <b>Konfirmasi Perubahan</b>\n\nSimpan revisi Prompt ini?" : "⚠️ <b>Konfirmasi Publikasi</b>\n\nTerbitkan Prompt Of The Day ini?";
+      const kb = { inline_keyboard: [[{ text: "✅ Ya, Eksekusi!", callback_data: "pr_confirm_post" }, { text: "❌ Cek Lagi", callback_data: "pr_cancel_input" }]] };
+      await editTelegramMessage(env, chatId, messageId, txt, kb);
+    }
+    else if (data === "pr_confirm_post") {
+      const state = await getUserState(env, userId);
+      if (!state) return;
+      const d = state.draft;
+      const secureImg = optimizeImage(d.image);
+
+      if (state.action === "EDIT" && d.id) {
+        const q = `UPDATE prompts SET image_url=?, ai_model=?, prompt_text=?, published_date=? WHERE id=?`;
+        await env.sovr_db.prepare(q).bind(secureImg, d.model, d.prompt, d.date, d.id).run();
+        await clearUserState(env, userId);
+        await editTelegramMessage(env, chatId, messageId, `✅ <b>SUKSES REVISI!</b>\n\nPrompt ID ${d.id} berhasil diperbarui.`, { inline_keyboard: [[{ text: "⬅️ Menu Utama", callback_data: "menu_main" }]] });
+      } else {
+        const q = `INSERT INTO prompts (image_url, ai_model, prompt_text, published_date) VALUES (?, ?, ?, ?) RETURNING id`;
+        const res: any = await env.sovr_db.prepare(q).bind(secureImg, d.model, d.prompt, d.date).first();
+        await clearUserState(env, userId);
+        await editTelegramMessage(env, chatId, messageId, `✅ <b>SUKSES TERBIT!</b>\n\nPrompt berhasil dipublikasikan!\nID: ${res?.id}`, { inline_keyboard: [[{ text: "⬅️ Menu Utama", callback_data: "menu_main" }]] });
+      }
+    }
+    else if (data === "pr_list" || data.startsWith("pr_list_") || data === "pr_edit" || data.startsWith("pr_edit_") || data === "pr_delete" || data.startsWith("pr_delete_")) {
+      const parts = data.split("_");
+      const action = parts[1];
+      const page = parts.length > 2 ? parseInt(parts[2]) : 0;
+      const limit = 5;
+      const offset = page * limit;
+
+      const { results } = await env.sovr_db.prepare(`SELECT id, ai_model, published_date FROM prompts ORDER BY id DESC LIMIT ? OFFSET ?`).bind(limit + 1, offset).all();
+      const hasNext = results && results.length > limit;
+      const items = results ? results.slice(0, limit) : [];
+
+      if (items.length === 0) {
+        return await editTelegramMessage(env, chatId, messageId, "📭 <b>Belum ada Prompt.</b>", { inline_keyboard: [[{ text: "⬅️ Kembali", callback_data: "menu_prompt" }]] });
+      }
+
+      const kb: any = { inline_keyboard: [] };
+      let msg = "";
+
+      if (action === "list") {
+        msg = `📋 <b>Daftar Prompt (Halaman ${page + 1}):</b>\n\n`;
+        items.forEach((a: any) => { msg += `🆔 <b>${a.id}</b> | [${a.ai_model}]\n📅 ${a.published_date}\n\n`; });
+      } else {
+        msg = `Pilih prompt yang ingin di-<b>${action === "edit" ? "EDIT" : "DELETE"}</b>:\n<i>(Halaman ${page + 1})</i>`;
+        items.forEach((a: any) => {
+          kb.inline_keyboard.push([{ text: `ID: ${a.id} - ${a.ai_model} (${a.published_date})`, callback_data: `pr_${action === "edit" ? "ed" : "de"}_${a.id}` }]);
+        });
+      }
+
+      const nav = [];
+      if (page > 0) nav.push({ text: "⬅️ Prev", callback_data: `pr_${action}_${page - 1}` });
+      if (hasNext) nav.push({ text: "Next ➡️", callback_data: `pr_${action}_${page + 1}` });
+      if (nav.length > 0) kb.inline_keyboard.push(nav);
+      kb.inline_keyboard.push([{ text: "⬅️ Kembali", callback_data: "menu_prompt" }]);
+
+      await editTelegramMessage(env, chatId, messageId, msg, kb);
+    }
+    else if (data.startsWith("pr_ed_")) {
+      const prId = data.split("_")[2];
+      const pr: any = await env.sovr_db.prepare(`SELECT * FROM prompts WHERE id = ?`).bind(prId).first();
+      if (!pr) return await answerCallbackQuery(env, callbackQuery.id, "Prompt not found", true);
+
+      const newState: TelegramState = {
+        menu: "PROMPT", action: "EDIT",
+        draft: { id: pr.id, image: pr.image_url, model: pr.ai_model, prompt: pr.prompt_text, date: pr.published_date },
+        waitingFor: null, lastMessageId: messageId
+      };
+      await setUserState(env, userId, newState);
+      const view = renderPromptDraft(newState.draft);
+      await editTelegramMessage(env, chatId, messageId, view.text, view.keyboard);
+    }
+    else if (data.startsWith("pr_de_")) {
+      const prId = data.split("_")[2];
+      const pr: any = await env.sovr_db.prepare(`SELECT ai_model, published_date FROM prompts WHERE id = ?`).bind(prId).first();
+      if (!pr) return await answerCallbackQuery(env, callbackQuery.id, "Prompt not found", true);
+
+      const kb = { inline_keyboard: [[{ text: "✅ Ya, Hapus!", callback_data: `pr_delc_${prId}` }, { text: "❌ Batal", callback_data: "menu_prompt" }]] };
+      await editTelegramMessage(env, chatId, messageId, `⚠️ <b>Konfirmasi Hapus</b>\n\nHapus Prompt: <i>${pr.ai_model} (${pr.published_date})</i>?`, kb);
+    }
+    else if (data.startsWith("pr_delc_")) {
+      const prId = data.split("_")[2];
+      await env.sovr_db.prepare(`DELETE FROM prompts WHERE id = ?`).bind(prId).run();
+      await editTelegramMessage(env, chatId, messageId, `✅ <b>SUKSES!</b>\n\nPrompt ID ${prId} berhasil dihapus permanen.`, { inline_keyboard: [[{ text: "⬅️ Kembali", callback_data: "menu_prompt" }]] });
+    }
+// --- BATAS PERUBAHAN ---
     // --- AWAL PERUBAHAN ---
 
     else if (data === "f_submit") {
@@ -967,6 +1166,14 @@ export default {
       // --- BATAS PERUBAHAN ---
     }
 
+    if (url.pathname === "/api/prompts" && request.method === "GET") {
+      const { results } = await env.sovr_db.prepare(`SELECT * FROM prompts ORDER BY id DESC`).all();
+      
+      const response = new Response(JSON.stringify(results), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "public, s-maxage=60" } });
+      ctx.waitUntil(cache.put(cacheKey, response.clone()));
+      return response;
+    }
+
     if (url.pathname === "/api/perspectives" && request.method === "GET") {
       const id = url.searchParams.get("id");
       
@@ -980,6 +1187,8 @@ export default {
         // --- BATAS PERUBAHAN ---
       }
 
+      
+
       const sort = url.searchParams.get("sort") || "latest";
       const category = url.searchParams.get("category");
       
@@ -990,6 +1199,8 @@ export default {
         query += ` WHERE LOWER(category) = ?`;
         params.push(category.toLowerCase());
       }
+
+      
       
       if (sort === "top") {
         query += ` ORDER BY views DESC, id DESC`;
