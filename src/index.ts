@@ -87,10 +87,39 @@ const mainKeyboard = {
     [{ text: "🔒 Manajemen Vault", callback_data: "menu_vault" }],
     [{ text: "🔭 Manajemen Perspectives", callback_data: "menu_perspectives" }],
     [{ text: "🎨 Manajemen Prompt", callback_data: "menu_prompt" }],
+    [{ text: "📡 Manajemen Signals (Media)", callback_data: "menu_signals" }],
     [{ text: "⭐ Pilihan Editor", callback_data: "menu_editor" }],
     [{ text: "👥 Manajemen Penulis", callback_data: "menu_author" }]
   ]
 };
+
+const signalsKeyboard = {
+  inline_keyboard: [
+    [{ text: "📝 Post Signal", callback_data: "s_post" }, { text: "📋 List Signal", callback_data: "s_list" }],
+    [{ text: "✏️ Edit Signal", callback_data: "s_edit" }, { text: "❌ Delete Signal", callback_data: "s_delete" }],
+    [{ text: "⬅️ Kembali ke Menu Utama", callback_data: "menu_main" }]
+  ]
+};
+
+function renderSignalDraft(draft: any) {
+  const text = `📡 <b>DRAFT SOCIAL SIGNALS</b>\n\n` +
+    `🏷️ <b>Platform:</b> ${draft.platform || '<i>(Belum diisi)</i>'}\n` +
+    `🔗 <b>Link Tujuan (URL):</b> ${draft.url ? '✅ Terisi' : '<i>(Belum diisi)</i>'}\n` +
+    `🖼️ <b>Link Gambar (Thumbnail/Avatar):</b> ${draft.image ? '✅ Terisi' : '<i>(Belum diisi)</i>'}\n` +
+    `💬 <b>Isi Teks / Judul:</b> ${draft.content ? '✅ Terisi (' + draft.content.length + ' karakter)' : '<i>(Belum diisi)</i>'}\n` +
+    `👤 <b>Author/Username:</b> ${draft.author || '<i>(Belum diisi)</i>'}\n` +
+    `📅 <b>Tanggal:</b> ${draft.date || '<i>(Belum diisi)</i>'}`;
+
+  const keyboard = {
+    inline_keyboard: [
+      [{ text: "🏷️ Platform", callback_data: "s_input_platform" }, { text: "🔗 Link Tujuan", callback_data: "s_input_url" }],
+      [{ text: "🖼️ Gambar", callback_data: "s_input_image" }, { text: "💬 Isi Teks", callback_data: "s_input_content" }],
+      [{ text: "👤 Author", callback_data: "s_input_author" }, { text: "📅 Tanggal", callback_data: "s_input_date" }],
+      [{ text: "⬅️ Kembali", callback_data: "menu_signals" }, { text: "💾 Simpan Signal", callback_data: "s_submit" }]
+    ]
+  };
+  return { text, keyboard };
+}
 
 const authorKeyboard = {
   inline_keyboard: [
@@ -260,30 +289,87 @@ async function handleIncomingMessage(env: Env, message: TelegramMessage) {
   // --- AWAL PERUBAHAN 2 ---
   // --- AWAL PERUBAHAN TAHAP 3 ---
   // --- AWAL PERUBAHAN ---
+  // --- AWAL PERUBAHAN ---
+  // --- AWAL PERUBAHAN ---
+  // --- AWAL PERUBAHAN ---
   if (state && state.waitingFor && state.lastMessageId) {
     await deleteTelegramMessage(env, chatId, message.message_id);
     
-    // 1. Simpan field yang sedang diisi ke dalam variabel sementara yang bebas dari null
     const currentField = state.waitingFor;
     
-    // 2. Masukkan data ke draft sesuai menu masing-masing
     if (state.menu === "AUTHOR") {
       if (currentField === "name") {
         state.draft.name = text;
         state.draft.slug = text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '');
       } else {
-        // Fitur opsional: Jika user mengetik "kosong", hapus data tersebut
         state.draft[currentField] = text.toLowerCase() === "kosong" ? "" : text;
       }
-    } else {
+    } 
+    else if (state.menu === "SIGNALS" && currentField === "url") {
+      state.draft.url = text;
+      
+      await editTelegramMessage(env, chatId, state.lastMessageId, "⏳ <i>Mengambil data otomatis dari link... Mohon tunggu sebentar.</i>");
+      
+      try {
+        if (state.draft.platform === "X") {
+          const cleanUrl = text.split("?")[0];
+          const vxUrl = cleanUrl.replace(/(https?:\/\/)?(www\.)?(x\.com|twitter\.com)/, "https://api.fxtwitter.com");
+          
+          const res = await fetch(vxUrl, {
+            headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" }
+          });
+          
+          if (res.ok) {
+            const rawData: any = await res.json();
+            const tweet = rawData.tweet || rawData;
+            
+            if (tweet) {
+              state.draft.content = tweet.text || "Media Post";
+              state.draft.author = tweet.author?.name || tweet.user_name || tweet.user_screen_name || "X User";
+              
+              let mediaUrl = tweet.author?.avatar_url || tweet.user_profile_image_url || "";
+              
+              if (tweet.media?.photos?.[0]?.url) {
+                mediaUrl = tweet.media.photos[0].url;
+              } else if (tweet.media?.videos?.[0]?.thumbnail_url) {
+                mediaUrl = tweet.media.videos[0].thumbnail_url;
+              } else if (tweet.mediaURLs && tweet.mediaURLs.length > 0) {
+                mediaUrl = tweet.mediaURLs[0];
+              } else if (tweet.media_extended && tweet.media_extended.length > 0) {
+                mediaUrl = tweet.media_extended[0].thumbnail_url || tweet.media_extended[0].url || mediaUrl;
+              }
+              
+              state.draft.image = mediaUrl;
+              state.draft.date = getTodayDate();
+            }
+          }
+        } else if (state.draft.platform === "YouTube") {
+          const cleanUrl = text.split("&")[0];
+          const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(cleanUrl)}&format=json`;
+          
+          const res = await fetch(oembedUrl, {
+             headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" }
+          });
+          if (res.ok) {
+            const data: any = await res.json();
+            if (data && data.title) {
+              state.draft.content = data.title;
+              state.draft.author = data.author_name || "YouTube Creator";
+              state.draft.image = data.thumbnail_url || "";
+              state.draft.date = getTodayDate();
+            }
+          }
+        }
+      } catch (error) {
+      }
+    } 
+    else {
       state.draft[currentField] = text;
     }
     
-    // 3. Kembalikan status waitingFor menjadi null
     state.waitingFor = null;
     await setUserState(env, userId, state);
 
-    // 4. Render ulang tampilan balasan bot sesuai menu
     if (state.menu === "VAULT") {
       const view = renderVaultDraft(state.draft);
       await editTelegramMessage(env, chatId, state.lastMessageId, `✅ <i>Data diperbarui!</i>\n\n${view.text}`, view.keyboard);
@@ -296,12 +382,18 @@ async function handleIncomingMessage(env: Env, message: TelegramMessage) {
     } else if (state.menu === "AUTHOR") {
       const view = renderAuthorDraft(state.draft);
       await editTelegramMessage(env, chatId, state.lastMessageId, `✅ <i>Data diperbarui!</i>\n\n${view.text}`, view.keyboard);
+    } else if (state.menu === "SIGNALS") {
+      const view = renderSignalDraft(state.draft);
+      const notif = currentField === "url" ? "✨ <i>Sihir Berhasil! Data ditarik otomatis.</i>" : "✅ <i>Data diperbarui!</i>";
+      await editTelegramMessage(env, chatId, state.lastMessageId, `${notif}\n\n${view.text}`, view.keyboard);
     } else {
       const view = renderFeedDraft(state.draft);
       await editTelegramMessage(env, chatId, state.lastMessageId, `✅ <i>Data diperbarui!</i>\n\n${view.text}`, view.keyboard);
     }
     return;
   }
+// --- BATAS PERUBAHAN ---
+
 
 }
 
@@ -1332,6 +1424,155 @@ async function handleCallbackQuery(env: Env, callbackQuery: TelegramCallbackQuer
       await editTelegramMessage(env, chatId, messageId, `✅ <b>SUKSES!</b>\n\nPenulis ID ${id} dihapus.`, { inline_keyboard: [[{ text: "⬅️ Kembali", callback_data: "menu_author" }]] });
     }
 
+    // --- AWAL PERUBAHAN ---
+    else if (data === "menu_signals") {
+      await clearUserState(env, userId);
+      await editTelegramMessage(env, chatId, messageId, "📡 <b>Manajemen Social Signals (X/YouTube)</b>\n\nPilih aksi:", signalsKeyboard);
+    }
+    else if (data === "s_post") {
+      const newState: TelegramState = { menu: "SIGNALS", action: "POST", draft: {}, waitingFor: null, lastMessageId: messageId };
+      await setUserState(env, userId, newState);
+      const view = renderSignalDraft(newState.draft);
+      await editTelegramMessage(env, chatId, messageId, view.text, view.keyboard);
+    }
+    else if (data.startsWith("s_input_")) {
+      const field = data.split("_")[2];
+      const state = await getUserState(env, userId);
+      if (!state) return;
+      state.waitingFor = field;
+      state.lastMessageId = messageId;
+      await setUserState(env, userId, state);
+
+      let promptText = `Ketik data untuk <b>${field.toUpperCase()}</b>:`;
+      let kb: any = { inline_keyboard: [[{ text: "⬅️ Batal", callback_data: "s_cancel_input" }]] };
+      
+      if (field === "platform") {
+        kb = { inline_keyboard: [
+          [{ text: "🕮 X (Twitter)", callback_data: "s_setplat_X" }, { text: "🎥 YouTube", callback_data: "s_setplat_YouTube" }],
+          [{ text: "⬅️ Batal", callback_data: "s_cancel_input" }]
+        ] };
+        promptText = "Pilih <b>Platform</b> media:";
+      } else if (field === "date") {
+        kb = { inline_keyboard: [ [{ text: "⏰ SEKARANG", callback_data: "s_set_now" }], [{ text: "⬅️ Batal", callback_data: "s_cancel_input" }] ] };
+        promptText = "Masukkan <b>Tanggal</b> (YYYY-MM-DD):";
+      }
+
+      await editTelegramMessage(env, chatId, messageId, promptText, kb);
+    }
+    else if (data === "s_cancel_input") {
+      const state = await getUserState(env, userId);
+      if (!state) return;
+      state.waitingFor = null;
+      await setUserState(env, userId, state);
+      const view = renderSignalDraft(state.draft);
+      await editTelegramMessage(env, chatId, messageId, view.text, view.keyboard);
+    }
+    else if (data === "s_set_now") {
+      const state = await getUserState(env, userId);
+      if (!state) return;
+      state.draft.date = getTodayDate();
+      state.waitingFor = null;
+      await setUserState(env, userId, state);
+      const view = renderSignalDraft(state.draft);
+      await editTelegramMessage(env, chatId, messageId, view.text, view.keyboard);
+    }
+    else if (data.startsWith("s_setplat_")) {
+      const state = await getUserState(env, userId);
+      if (!state) return;
+      state.draft.platform = data.split("_")[2];
+      state.waitingFor = null;
+      await setUserState(env, userId, state);
+      const view = renderSignalDraft(state.draft);
+      await editTelegramMessage(env, chatId, messageId, view.text, view.keyboard);
+    }
+    else if (data === "s_submit") {
+      const state = await getUserState(env, userId);
+      if (!state) return;
+      const d = state.draft;
+      if (!d.platform || !d.url || !d.content || !d.author || !d.date) {
+        return await answerCallbackQuery(env, callbackQuery.id, "Data Signal belum lengkap!", true);
+      }
+      const txt = state.action === "EDIT" ? "⚠️ <b>Konfirmasi Perubahan</b>\n\nSimpan revisi Signal ini?" : "⚠️ <b>Konfirmasi Publikasi</b>\n\nTerbitkan Signal ini ke Feed?";
+      const kb = { inline_keyboard: [[{ text: "✅ Ya, Eksekusi!", callback_data: "s_confirm_post" }, { text: "❌ Cek Lagi", callback_data: "s_cancel_input" }]] };
+      await editTelegramMessage(env, chatId, messageId, txt, kb);
+    }
+    else if (data === "s_confirm_post") {
+      const state = await getUserState(env, userId);
+      if (!state) return;
+      const d = state.draft;
+      const secureImg = d.image ? optimizeImage(d.image) : null;
+
+      if (state.action === "EDIT" && d.id) {
+        const q = `UPDATE social_signals SET platform=?, url=?, image_url=?, content=?, author=?, published_date=? WHERE id=?`;
+        await env.sovr_db.prepare(q).bind(d.platform, d.url, secureImg, d.content, d.author, d.date, d.id).run();
+        await clearUserState(env, userId);
+        await editTelegramMessage(env, chatId, messageId, `✅ <b>SUKSES!</b>\n\nSignal ID ${d.id} diperbarui.`, { inline_keyboard: [[{ text: "⬅️ Menu Utama", callback_data: "menu_main" }]] });
+      } else {
+        const q = `INSERT INTO social_signals (platform, url, image_url, content, author, published_date) VALUES (?, ?, ?, ?, ?, ?) RETURNING id`;
+        const res: any = await env.sovr_db.prepare(q).bind(d.platform, d.url, secureImg, d.content, d.author, d.date).first();
+        await clearUserState(env, userId);
+        await editTelegramMessage(env, chatId, messageId, `✅ <b>SUKSES!</b>\n\nSignal dipublikasikan! ID: ${res?.id}`, { inline_keyboard: [[{ text: "⬅️ Menu Utama", callback_data: "menu_main" }]] });
+      }
+    }
+    else if (data === "s_list" || data.startsWith("s_list_") || data === "s_edit" || data.startsWith("s_edit_") || data === "s_delete" || data.startsWith("s_delete_")) {
+      const parts = data.split("_");
+      const action = parts[1];
+      const page = parts.length > 2 ? parseInt(parts[2]) : 0;
+      const limit = 5;
+      const offset = page * limit;
+
+      const { results } = await env.sovr_db.prepare(`SELECT id, platform, author FROM social_signals ORDER BY id DESC LIMIT ? OFFSET ?`).bind(limit + 1, offset).all();
+      const hasNext = results && results.length > limit;
+      const items = results ? results.slice(0, limit) : [];
+
+      if (items.length === 0) return await editTelegramMessage(env, chatId, messageId, "📭 <b>Belum ada Signal.</b>", { inline_keyboard: [[{ text: "⬅️ Kembali", callback_data: "menu_signals" }]] });
+
+      const kb: any = { inline_keyboard: [] };
+      let msg = "";
+
+      if (action === "list") {
+        msg = `📋 <b>Daftar Signals (Halaman ${page + 1}):</b>\n\n`;
+        items.forEach((a: any) => { msg += `🆔 <b>${a.id}</b> | [${a.platform}] - ${a.author}\n\n`; });
+      } else {
+        msg = `Pilih signal yang ingin di-<b>${action === "edit" ? "EDIT" : "DELETE"}</b>:\n<i>(Halaman ${page + 1})</i>`;
+        items.forEach((a: any) => {
+          kb.inline_keyboard.push([{ text: `ID: ${a.id} - ${a.author}`, callback_data: `s_${action === "edit" ? "ed" : "de"}_${a.id}` }]);
+        });
+      }
+
+      const nav = [];
+      if (page > 0) nav.push({ text: "⬅️ Prev", callback_data: `s_${action}_${page - 1}` });
+      if (hasNext) nav.push({ text: "Next ➡️", callback_data: `s_${action}_${page + 1}` });
+      if (nav.length > 0) kb.inline_keyboard.push(nav);
+      kb.inline_keyboard.push([{ text: "⬅️ Kembali", callback_data: "menu_signals" }]);
+
+      await editTelegramMessage(env, chatId, messageId, msg, kb);
+    }
+    else if (data.startsWith("s_ed_")) {
+      const id = data.split("_")[2];
+      const sig: any = await env.sovr_db.prepare(`SELECT * FROM social_signals WHERE id = ?`).bind(id).first();
+      if (!sig) return await answerCallbackQuery(env, callbackQuery.id, "Not found", true);
+
+      const newState: TelegramState = {
+        menu: "SIGNALS", action: "EDIT",
+        draft: { id: sig.id, platform: sig.platform, url: sig.url, image: sig.image_url, content: sig.content, author: sig.author, date: sig.published_date },
+        waitingFor: null, lastMessageId: messageId
+      };
+      await setUserState(env, userId, newState);
+      const view = renderSignalDraft(newState.draft);
+      await editTelegramMessage(env, chatId, messageId, view.text, view.keyboard);
+    }
+    else if (data.startsWith("s_de_")) {
+      const id = data.split("_")[2];
+      const kb = { inline_keyboard: [[{ text: "✅ Ya, Hapus!", callback_data: `s_delc_${id}` }, { text: "❌ Batal", callback_data: "menu_signals" }]] };
+      await editTelegramMessage(env, chatId, messageId, `⚠️ <b>Konfirmasi Hapus</b>\n\nHapus Signal ID ${id}?`, kb);
+    }
+    else if (data.startsWith("s_delc_")) {
+      const id = data.split("_")[2];
+      await env.sovr_db.prepare(`DELETE FROM social_signals WHERE id = ?`).bind(id).run();
+      await editTelegramMessage(env, chatId, messageId, `✅ <b>SUKSES!</b>\n\nSignal ID ${id} dihapus.`, { inline_keyboard: [[{ text: "⬅️ Kembali", callback_data: "menu_signals" }]] });
+    }
+
 // --- BATAS PERUBAHAN ---
     
     await answerCallbackQuery(env, callbackQuery.id, "");
@@ -1339,6 +1580,8 @@ async function handleCallbackQuery(env: Env, callbackQuery: TelegramCallbackQuer
     console.error("Callback query error:", error);
     await answerCallbackQuery(env, callbackQuery.id, "Internal Server Error", true);
   }
+
+  
 
   
   
@@ -1404,6 +1647,16 @@ export default {
       ctx.waitUntil(cache.put(cacheKey, response.clone()));
       return response;
     }
+
+    // --- AWAL PERUBAHAN ---
+    if (url.pathname === "/api/signals" && request.method === "GET") {
+      const { results } = await env.sovr_db.prepare(`SELECT * FROM social_signals ORDER BY id DESC LIMIT 4`).all();
+      
+      const response = new Response(JSON.stringify(results), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "public, s-maxage=60" } });
+      ctx.waitUntil(cache.put(cacheKey, response.clone()));
+      return response;
+    }
+// --- BATAS PERUBAHAN ---
 
     if (url.pathname === "/api/perspectives" && request.method === "GET") {
       const id = url.searchParams.get("id");
