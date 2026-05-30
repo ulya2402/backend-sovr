@@ -54,3 +54,20 @@ CREATE TABLE IF NOT EXISTS prompts (
     published_date TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+-- --- AWAL PERUBAHAN: Tambahan Tabel Profil Penulis ---
+CREATE TABLE IF NOT EXISTS authors (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT UNIQUE NOT NULL,
+    slug TEXT UNIQUE NOT NULL,
+    bio TEXT,
+    avatar_url TEXT,
+    twitter TEXT,
+    linkedin TEXT,
+    instagram TEXT,
+    facebook TEXT,
+    telegram TEXT,
+    threads TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+-- --- BATAS PERUBAHAN ---

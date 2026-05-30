@@ -87,9 +87,44 @@ const mainKeyboard = {
     [{ text: "🔒 Manajemen Vault", callback_data: "menu_vault" }],
     [{ text: "🔭 Manajemen Perspectives", callback_data: "menu_perspectives" }],
     [{ text: "🎨 Manajemen Prompt", callback_data: "menu_prompt" }],
-    [{ text: "⭐ Pilihan Editor", callback_data: "menu_editor" }]
+    [{ text: "⭐ Pilihan Editor", callback_data: "menu_editor" }],
+    [{ text: "👥 Manajemen Penulis", callback_data: "menu_author" }]
   ]
 };
+
+const authorKeyboard = {
+  inline_keyboard: [
+    [{ text: "📝 Tambah Penulis", callback_data: "a_post" }, { text: "📋 List Penulis", callback_data: "a_list" }],
+    [{ text: "✏️ Edit Penulis", callback_data: "a_edit" }, { text: "❌ Delete Penulis", callback_data: "a_delete" }],
+    [{ text: "⬅️ Kembali ke Menu Utama", callback_data: "menu_main" }]
+  ]
+};
+
+function renderAuthorDraft(draft: any) {
+  const text = `👥 <b>DRAFT PROFIL PENULIS</b>\n\n` +
+    `👤 <b>Nama:</b> ${draft.name || '<i>(Belum diisi)</i>'}\n` +
+    `🔗 <b>Slug:</b> ${draft.slug || '<i>(Otomatis dari Nama)</i>'}\n` +
+    `📝 <b>Bio:</b> ${draft.bio ? draft.bio.substring(0, 40) + '...' : '<i>(Kosong)</i>'}\n` +
+    `🖼️ <b>Foto (URL):</b> ${draft.avatar ? '✅ Diisi' : '<i>(Kosong)</i>'}\n` +
+    `𝕏 <b>Twitter:</b> ${draft.twitter || '<i>(Kosong)</i>'}\n` +
+    `💼 <b>LinkedIn:</b> ${draft.linkedin || '<i>(Kosong)</i>'}\n` +
+    `📸 <b>Instagram:</b> ${draft.instagram || '<i>(Kosong)</i>'}\n` +
+    `📘 <b>Facebook:</b> ${draft.facebook || '<i>(Kosong)</i>'}\n` +
+    `✈️ <b>Telegram:</b> ${draft.telegram || '<i>(Kosong)</i>'}\n` +
+    `🧵 <b>Threads:</b> ${draft.threads || '<i>(Kosong)</i>'}`;
+
+  const keyboard = {
+    inline_keyboard: [
+      [{ text: "👤 Nama", callback_data: "a_input_name" }, { text: "📝 Bio", callback_data: "a_input_bio" }],
+      [{ text: "🖼️ Foto", callback_data: "a_input_avatar" }, { text: "𝕏 Twitter", callback_data: "a_input_twitter" }],
+      [{ text: "💼 LinkedIn", callback_data: "a_input_linkedin" }, { text: "📸 Instagram", callback_data: "a_input_instagram" }],
+      [{ text: "📘 Facebook", callback_data: "a_input_facebook" }, { text: "✈️ Telegram", callback_data: "a_input_telegram" }],
+      [{ text: "🧵 Threads", callback_data: "a_input_threads" }],
+      [{ text: "⬅️ Kembali", callback_data: "menu_author" }, { text: "💾 Simpan Profil", callback_data: "a_submit" }]
+    ]
+  };
+  return { text, keyboard };
+}
 
 // --- AWAL PERUBAHAN ---
 const feedKeyboard = {
@@ -228,10 +263,27 @@ async function handleIncomingMessage(env: Env, message: TelegramMessage) {
   if (state && state.waitingFor && state.lastMessageId) {
     await deleteTelegramMessage(env, chatId, message.message_id);
     
-    state.draft[state.waitingFor] = text;
+    // 1. Simpan field yang sedang diisi ke dalam variabel sementara yang bebas dari null
+    const currentField = state.waitingFor;
+    
+    // 2. Masukkan data ke draft sesuai menu masing-masing
+    if (state.menu === "AUTHOR") {
+      if (currentField === "name") {
+        state.draft.name = text;
+        state.draft.slug = text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '');
+      } else {
+        // Fitur opsional: Jika user mengetik "kosong", hapus data tersebut
+        state.draft[currentField] = text.toLowerCase() === "kosong" ? "" : text;
+      }
+    } else {
+      state.draft[currentField] = text;
+    }
+    
+    // 3. Kembalikan status waitingFor menjadi null
     state.waitingFor = null;
     await setUserState(env, userId, state);
 
+    // 4. Render ulang tampilan balasan bot sesuai menu
     if (state.menu === "VAULT") {
       const view = renderVaultDraft(state.draft);
       await editTelegramMessage(env, chatId, state.lastMessageId, `✅ <i>Data diperbarui!</i>\n\n${view.text}`, view.keyboard);
@@ -240,6 +292,9 @@ async function handleIncomingMessage(env: Env, message: TelegramMessage) {
       await editTelegramMessage(env, chatId, state.lastMessageId, `✅ <i>Data diperbarui!</i>\n\n${view.text}`, view.keyboard);
     } else if (state.menu === "PROMPT") {
       const view = renderPromptDraft(state.draft);
+      await editTelegramMessage(env, chatId, state.lastMessageId, `✅ <i>Data diperbarui!</i>\n\n${view.text}`, view.keyboard);
+    } else if (state.menu === "AUTHOR") {
+      const view = renderAuthorDraft(state.draft);
       await editTelegramMessage(env, chatId, state.lastMessageId, `✅ <i>Data diperbarui!</i>\n\n${view.text}`, view.keyboard);
     } else {
       const view = renderFeedDraft(state.draft);
@@ -296,6 +351,18 @@ async function handleCallbackQuery(env: Env, callbackQuery: TelegramCallbackQuer
           [{ text: "⬅️ Batal", callback_data: "f_cancel_input" }]
         ] };
         prompt = "Pilih <b>Kategori</b>:";
+      } else if (field === "author") {
+        const { results } = await env.sovr_db.prepare(`SELECT id, name FROM authors ORDER BY name ASC LIMIT 40`).all();
+        if (!results || results.length === 0) {
+          prompt = "⚠️ <b>Daftar Penulis Kosong!</b>\n\nSilakan buat Profil Penulis di menu <b>👥 Manajemen Penulis</b> terlebih dahulu.";
+        } else {
+          prompt = "Pilih <b>Penulis</b> dari daftar database berikut:";
+          kb.inline_keyboard = [];
+          results.forEach((row: any) => {
+            kb.inline_keyboard.push([{ text: `✍️ ${row.name}`, callback_data: `f_setaut_${row.id}` }]);
+          });
+          kb.inline_keyboard.push([{ text: "⬅️ Batal", callback_data: "f_cancel_input" }]);
+        }
       }
 
       await editTelegramMessage(env, chatId, messageId, prompt, kb);
@@ -983,6 +1050,18 @@ async function handleCallbackQuery(env: Env, callbackQuery: TelegramCallbackQuer
         prompt = "Pilih <b>Kategori Utama</b> editorial:";
       } else if (field === "image") {
         prompt = "Masukkan <b>Link URL Gambar Utama (Hero Image)</b> untuk sampul artikel:";
+      } else if (field === "author") {
+        const { results } = await env.sovr_db.prepare(`SELECT id, name FROM authors ORDER BY name ASC LIMIT 40`).all();
+        if (!results || results.length === 0) {
+          prompt = "⚠️ <b>Daftar Penulis Kosong!</b>\n\nSilakan buat Profil Penulis di menu <b>👥 Manajemen Penulis</b> terlebih dahulu.";
+        } else {
+          prompt = "Pilih <b>Penulis</b> dari daftar database berikut:";
+          kb.inline_keyboard = [];
+          results.forEach((row: any) => {
+            kb.inline_keyboard.push([{ text: `✍️ ${row.name}`, callback_data: `p_setaut_${row.id}` }]);
+          });
+          kb.inline_keyboard.push([{ text: "⬅️ Batal", callback_data: "p_cancel_input" }]);
+        }
       }
 
       await editTelegramMessage(env, chatId, messageId, prompt, kb);
@@ -1111,6 +1190,147 @@ async function handleCallbackQuery(env: Env, callbackQuery: TelegramCallbackQuer
       await editTelegramMessage(env, chatId, messageId, `✅ <b>SUKSES!</b>\n\nArtikel ID ${artId} berhasil dihapus permanen.`, { inline_keyboard: [[{ text: "⬅️ Kembali", callback_data: "menu_perspectives" }]] });
     }
 // --- BATAS PERUBAHAN TAHAP 4 ---
+    // --- AWAL PERUBAHAN BLOK 4: src/index.ts (CRUD Profil Penulis & Trigger Set Author) ---
+    else if (data.startsWith("f_setaut_") || data.startsWith("p_setaut_")) {
+      const prefix = data.split("_")[0];
+      const authorId = data.split("_")[2];
+      const authorDb: any = await env.sovr_db.prepare(`SELECT name FROM authors WHERE id = ?`).bind(authorId).first();
+      
+      if (authorDb) {
+        const state = await getUserState(env, userId);
+        if (state) {
+          state.draft.author = authorDb.name;
+          state.waitingFor = null;
+          await setUserState(env, userId, state);
+          const view = prefix === "f" ? renderFeedDraft(state.draft) : renderPerspectivesDraft(state.draft);
+          await editTelegramMessage(env, chatId, messageId, view.text, view.keyboard);
+        }
+      }
+    }
+    else if (data === "menu_author") {
+      await clearUserState(env, userId);
+      await editTelegramMessage(env, chatId, messageId, "👥 <b>Manajemen Penulis</b>\n\nPilih aksi yang ingin dilakukan:", authorKeyboard);
+    }
+    else if (data === "a_post") {
+      const newState: TelegramState = { menu: "AUTHOR", action: "POST", draft: {}, waitingFor: null, lastMessageId: messageId };
+      await setUserState(env, userId, newState);
+      const view = renderAuthorDraft(newState.draft);
+      await editTelegramMessage(env, chatId, messageId, view.text, view.keyboard);
+    }
+    else if (data.startsWith("a_input_")) {
+      const field = data.split("_")[2];
+      const state = await getUserState(env, userId);
+      if (!state) return;
+      state.waitingFor = field;
+      state.lastMessageId = messageId;
+      await setUserState(env, userId, state);
+      
+      let promptText = `Ketik data untuk <b>${field.toUpperCase()}</b>:\n<i>(Ketik kata "kosong" jika Anda ingin mengosongkan/menghapus isian ini)</i>`;
+      const kb = { inline_keyboard: [[{ text: "⬅️ Batal", callback_data: "a_cancel_input" }]] };
+      await editTelegramMessage(env, chatId, messageId, promptText, kb);
+    }
+    else if (data === "a_cancel_input") {
+      const state = await getUserState(env, userId);
+      if (!state) return;
+      state.waitingFor = null;
+      await setUserState(env, userId, state);
+      const view = renderAuthorDraft(state.draft);
+      await editTelegramMessage(env, chatId, messageId, view.text, view.keyboard);
+    }
+    else if (data === "a_submit") {
+      const state = await getUserState(env, userId);
+      if (!state) return;
+      const d = state.draft;
+      if (!d.name) {
+        return await answerCallbackQuery(env, callbackQuery.id, "Error: Nama Penulis wajib diisi!", true);
+      }
+      const txt = state.action === "EDIT" ? "⚠️ <b>Konfirmasi Perubahan</b>\n\nSimpan revisi Profil Penulis ini?" : "⚠️ <b>Konfirmasi Simpan</b>\n\nTambahkan profil penulis ini ke database SOVR?";
+      const kb = { inline_keyboard: [[{ text: "✅ Ya, Simpan!", callback_data: "a_confirm_post" }, { text: "❌ Cek Lagi", callback_data: "a_cancel_input" }]] };
+      await editTelegramMessage(env, chatId, messageId, txt, kb);
+    }
+    else if (data === "a_confirm_post") {
+      const state = await getUserState(env, userId);
+      if (!state) return;
+      const d = state.draft;
+      
+      const clean = (val: any) => (!val || val === "") ? null : val;
+      const avatarUrl = d.avatar ? optimizeImage(d.avatar) : null;
+      
+      if (state.action === "EDIT" && d.id) {
+        const q = `UPDATE authors SET name=?, slug=?, bio=?, avatar_url=?, twitter=?, linkedin=?, instagram=?, facebook=?, telegram=?, threads=? WHERE id=?`;
+        await env.sovr_db.prepare(q).bind(d.name, d.slug, clean(d.bio), avatarUrl, clean(d.twitter), clean(d.linkedin), clean(d.instagram), clean(d.facebook), clean(d.telegram), clean(d.threads), d.id).run();
+        await clearUserState(env, userId);
+        await editTelegramMessage(env, chatId, messageId, `✅ <b>SUKSES REVISI!</b>\n\nProfil ${d.name} berhasil diperbarui.`, { inline_keyboard: [[{ text: "⬅️ Menu Utama", callback_data: "menu_main" }]] });
+      } else {
+        const q = `INSERT INTO authors (name, slug, bio, avatar_url, twitter, linkedin, instagram, facebook, telegram, threads) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`;
+        const res: any = await env.sovr_db.prepare(q).bind(d.name, d.slug, clean(d.bio), avatarUrl, clean(d.twitter), clean(d.linkedin), clean(d.instagram), clean(d.facebook), clean(d.telegram), clean(d.threads)).first();
+        await clearUserState(env, userId);
+        await editTelegramMessage(env, chatId, messageId, `✅ <b>SUKSES!</b>\n\nPenulis ${d.name} ditambahkan!\nID: ${res?.id}`, { inline_keyboard: [[{ text: "⬅️ Menu Utama", callback_data: "menu_main" }]] });
+      }
+    }
+    else if (data === "a_list" || data.startsWith("a_list_") || data === "a_edit" || data.startsWith("a_edit_") || data === "a_delete" || data.startsWith("a_delete_")) {
+      const parts = data.split("_");
+      const action = parts[1];
+      const page = parts.length > 2 ? parseInt(parts[2]) : 0;
+      const limit = 5;
+      const offset = page * limit;
+
+      const { results } = await env.sovr_db.prepare(`SELECT id, name FROM authors ORDER BY name ASC LIMIT ? OFFSET ?`).bind(limit + 1, offset).all();
+      const hasNext = results && results.length > limit;
+      const items = results ? results.slice(0, limit) : [];
+
+      if (items.length === 0) {
+        return await editTelegramMessage(env, chatId, messageId, "📭 <b>Belum ada Penulis terdaftar.</b>", { inline_keyboard: [[{ text: "⬅️ Kembali", callback_data: "menu_author" }]] });
+      }
+
+      const kb: any = { inline_keyboard: [] };
+      let msg = "";
+
+      if (action === "list") {
+        msg = `📋 <b>Daftar Penulis (Halaman ${page + 1}):</b>\n\n`;
+        items.forEach((a: any) => { msg += `🆔 <b>${a.id}</b> | 👤 ${a.name}\n\n`; });
+      } else {
+        msg = `Pilih penulis yang ingin di-<b>${action === "edit" ? "EDIT" : "DELETE"}</b>:\n<i>(Halaman ${page + 1})</i>`;
+        items.forEach((a: any) => {
+          kb.inline_keyboard.push([{ text: `ID: ${a.id} - ${a.name}`, callback_data: `a_${action === "edit" ? "ed" : "de"}_${a.id}` }]);
+        });
+      }
+
+      const nav = [];
+      if (page > 0) nav.push({ text: "⬅️ Prev", callback_data: `a_${action}_${page - 1}` });
+      if (hasNext) nav.push({ text: "Next ➡️", callback_data: `a_${action}_${page + 1}` });
+      if (nav.length > 0) kb.inline_keyboard.push(nav);
+      kb.inline_keyboard.push([{ text: "⬅️ Kembali", callback_data: "menu_author" }]);
+
+      await editTelegramMessage(env, chatId, messageId, msg, kb);
+    }
+    else if (data.startsWith("a_ed_")) {
+      const id = data.split("_")[2];
+      const art: any = await env.sovr_db.prepare(`SELECT * FROM authors WHERE id = ?`).bind(id).first();
+      if (!art) return await answerCallbackQuery(env, callbackQuery.id, "Author not found", true);
+
+      const newState: TelegramState = {
+        menu: "AUTHOR", action: "EDIT",
+        draft: { id: art.id, name: art.name, slug: art.slug, bio: art.bio, avatar: art.avatar_url, twitter: art.twitter, linkedin: art.linkedin, instagram: art.instagram, facebook: art.facebook, telegram: art.telegram, threads: art.threads },
+        waitingFor: null, lastMessageId: messageId
+      };
+      await setUserState(env, userId, newState);
+      const view = renderAuthorDraft(newState.draft);
+      await editTelegramMessage(env, chatId, messageId, view.text, view.keyboard);
+    }
+    else if (data.startsWith("a_de_")) {
+      const id = data.split("_")[2];
+      const art: any = await env.sovr_db.prepare(`SELECT name FROM authors WHERE id = ?`).bind(id).first();
+      if (!art) return await answerCallbackQuery(env, callbackQuery.id, "Author not found", true);
+
+      const kb = { inline_keyboard: [[{ text: "✅ Ya, Hapus!", callback_data: `a_delc_${id}` }, { text: "❌ Batal", callback_data: "menu_author" }]] };
+      await editTelegramMessage(env, chatId, messageId, `⚠️ <b>Konfirmasi Hapus</b>\n\nHapus profil penulis:\n<i>${art.name}</i>?`, kb);
+    }
+    else if (data.startsWith("a_delc_")) {
+      const id = data.split("_")[2];
+      await env.sovr_db.prepare(`DELETE FROM authors WHERE id = ?`).bind(id).run();
+      await editTelegramMessage(env, chatId, messageId, `✅ <b>SUKSES!</b>\n\nPenulis ID ${id} dihapus.`, { inline_keyboard: [[{ text: "⬅️ Kembali", callback_data: "menu_author" }]] });
+    }
 
 // --- BATAS PERUBAHAN ---
     
@@ -1154,6 +1374,17 @@ export default {
       ctx.waitUntil(cache.put(cacheKey, response.clone()));
       return response;
       // --- BATAS PERUBAHAN ---
+    }
+
+    if (url.pathname === "/api/authors" && request.method === "GET") {
+      const { results } = await env.sovr_db.prepare(`SELECT * FROM authors ORDER BY name ASC`).all();
+      
+      const response = new Response(JSON.stringify(results), { 
+        status: 200, 
+        headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "public, s-maxage=60" } 
+      });
+      ctx.waitUntil(cache.put(cacheKey, response.clone()));
+      return response;
     }
 
     if (url.pathname === "/api/vault" && request.method === "GET") {
@@ -1272,6 +1503,7 @@ export default {
       } catch (e) {}
       return new Response("OK", { status: 200 });
     }
+    
     return new Response("Not Found", { status: 404, headers: corsHeaders });
   },
 };
