@@ -1609,6 +1609,62 @@ export default {
     }
     // --- BATAS PERUBAHAN: IMPLEMENTASI EDGE CACHE ---
 
+    if (url.pathname === "/sitemap.xml" && request.method === "GET") {
+      // ⚠️ GANTI DENGAN DOMAIN ASLI ANDA JIKA SUDAH RILIS (misal: "https://sovr.id")
+      const baseUrl = "https://readsovr.com"; 
+      
+      const slugify = (text: string) => text ? text.toString().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '') : '';
+
+      try {
+        // Ambil semua data secara paralel agar eksekusi di Edge Server super cepat
+        const [articles, vaults, perspectives] = await Promise.all([
+          env.sovr_db.prepare("SELECT title FROM articles WHERE status = 'published' ORDER BY id DESC").all(),
+          env.sovr_db.prepare("SELECT name FROM vault_tools ORDER BY id DESC").all(),
+          env.sovr_db.prepare("SELECT title FROM perspectives ORDER BY id DESC").all()
+        ]);
+
+        let xml = `<?xml version="1.0" encoding="UTF-8"?>\n`;
+        xml += `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n`;
+
+        // 1. Halaman Statis Utama
+        const staticPages = ['', '/perspectives', '/vault'];
+        staticPages.forEach(page => {
+          xml += `  <url>\n    <loc>${baseUrl}${page}</loc>\n    <changefreq>daily</changefreq>\n    <priority>${page === '' ? '1.0' : '0.8'}</priority>\n  </url>\n`;
+        });
+
+        // 2. Halaman Dinamis: Feed Berita
+        articles.results?.forEach((a: any) => {
+          if (a.title) xml += `  <url>\n    <loc>${baseUrl}/feed/${slugify(a.title)}</loc>\n    <changefreq>daily</changefreq>\n    <priority>0.7</priority>\n  </url>\n`;
+        });
+
+        // 3. Halaman Dinamis: Vault Tools
+        vaults.results?.forEach((v: any) => {
+          if (v.name) xml += `  <url>\n    <loc>${baseUrl}/vault/${slugify(v.name)}</loc>\n    <changefreq>monthly</changefreq>\n    <priority>0.6</priority>\n  </url>\n`;
+        });
+
+        // 4. Halaman Dinamis: Perspectives (Blog)
+        perspectives.results?.forEach((p: any) => {
+          if (p.title) xml += `  <url>\n    <loc>${baseUrl}/perspectives/${slugify(p.title)}</loc>\n    <changefreq>weekly</changefreq>\n    <priority>0.75</priority>\n  </url>\n`;
+        });
+
+        xml += `</urlset>`;
+
+        const response = new Response(xml, { 
+          status: 200, 
+          headers: { 
+            ...corsHeaders, 
+            "Content-Type": "application/xml", 
+            "Cache-Control": "public, s-maxage=3600" // Cache di CDN selama 1 jam agar hemat Database
+          } 
+        });
+        
+        ctx.waitUntil(cache.put(cacheKey, response.clone()));
+        return response;
+      } catch (error) {
+        return new Response("Error generating sitemap", { status: 500 });
+      }
+    }
+
     if (url.pathname === "/api/articles" && request.method === "GET") {
       const { results } = await env.sovr_db.prepare(`SELECT * FROM articles WHERE status = 'published' ORDER BY id DESC`).all();
       
